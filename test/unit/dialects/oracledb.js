@@ -103,4 +103,45 @@ describe("OracleDb parameters", function() {
 
   });
 
+  describe("OracleDb driver's pool", function() {
+    var knexInstance = knex({
+      client: 'oracledb',
+      connection: {
+        user          : "service",
+        password      : "account",
+        connectString : 'connect-string',
+        host          : "host",
+        database      : "database",
+        pool: {
+          delegateToDriversDialect: true
+        }
+      }
+    });
+    var spy;
+  
+    before(function() {
+      spy = sinon.spy(knexInstance.client.driver, "createPool");
+    });
+  
+    it('bypass knex pool when delegateToDriversDialect is true', function() {
+        var poolWithHeterogeneous = {
+            user          : "service",
+            password      : "account",
+            connectString: "connect-string",
+            homogeneous   : false
+        }
+        knexInstance.client.acquireRawConnection().then(
+            function(resolve) {},
+            function(reject) {}
+        );
+        expect(spy).to.have.callCount(1);
+        expect(spy).to.have.been.calledWith(poolWithHeterogeneous);
+    });
+  
+    after(function() {
+      knexInstance.client.driver.createPool.restore();
+    });
+  
+  });
+  
 });
