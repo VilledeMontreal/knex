@@ -276,7 +276,17 @@ assign(Client.prototype, {
     })
   },
 
-  initializePool(config) {
+  initializePool(config = this.config) {
+    if (config.pool && config.pool.delegateToDriverDialect && !this.canDialectManagePool) {
+      this.logger.warn("Property delegateToDriverDialect not supported for this dialect!");
+      config.pool.delegateToDriverDialect = false;
+    }
+
+    if (config.pool && config.pool.delegateToDriverDialect && this.canDialectManagePool) {
+      this.logger.debug("Using dialect's pooling");
+      this.dialectInitializePool();
+    }
+
     if (this.pool) {
       this.logger.warn('The pool has already been initialized')
       return
@@ -359,9 +369,42 @@ assign(Client.prototype, {
   },
 
   cancelQuery() {
-    throw new Error("Query cancelling not supported for this dialect")
-  }
+    throw new Error('Query cancelling not supported for this dialect');
+  },
 
-})
+  // Required for case using dialect's pooling instead of tarn one
+  // See delegatedToDriversDialect in pool config
+  canDialectManagePool: false,
+  
+  // Required for case using Oracle's pooling instead of tarn one
+  // See delegatedToDriversDialect in pool config
+  dialectAcquireConnectionPool(oraclePool) {
+    throw new Error("Pooling not supported for this dialect")
+  },
+
+  // Required for case using Oracle's pooling instead of tarn one
+  // See delegatedToDriversDialect in pool config
+  dialectInitializePool(config) {
+    throw new Error("Pooling not supported for this dialect")
+  },
+
+  // Required for case using Oracle's poolling instead of tarn one
+  // See delegatedToDriversDialect in pool config
+  dialectDestroyPool(cb) {
+    throw new Error("Pooling not supported for this dialect")
+  },
+
+  // Required for case using Oracle's poolling instead of tarn one
+  // See delegatedToDriversDialect in pool config
+  dialectReleaseConnectionPool(connection) {
+    throw new Error("Pooling not supported for this dialect")
+  },
+
+  // Required for case using Oracle's poolling instead of tarn one
+  // See delegatedToDriversDialect in pool config
+  dialectValidateConnectionPool(connection) {
+    throw new Error("Pooling not supported for this dialect")
+  },
+});
 
 export default Client

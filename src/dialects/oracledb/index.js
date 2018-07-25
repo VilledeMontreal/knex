@@ -377,6 +377,40 @@ Client_Oracledb.prototype.processResponse = function(obj, runner) {
   }
 };
 
+// Required for case using Oracle's poolling instead of tarn one
+// See delegatedToDriversDialect in pool config
+Client_Oracledb.prototype.dialectAcquireConnectionPool = function(oraclePool) {
+  return new Promise.resolve(null);
+};
+
+// Required for case using Oracle's poolling instead of tarn one
+// See delegatedToDriversDialect in pool config
+Client_Oracledb.prototype.dialectInitializePool = function(config) {
+  return ;
+};
+
+// Required for case using Oracle's poolling instead of tarn one
+// See delegatedToDriversDialect in pool config
+Client_Oracledb.prototype.dialectDestroyPool = function(cb) {
+  if (cb) { 
+    return cb(); 
+  } else {
+    return new Promise.resolve(null);
+  }
+};
+
+// Required for case using Oracle's poolling instead of tarn one
+// See delegatedToDriversDialect in pool config
+Client_Oracledb.prototype.dialectReleaseConnectionPool = function(connection) {
+  return new Promise.resolve(null);
+};
+
+// Required for case using Oracle's poolling instead of tarn one
+// See delegatedToDriversDialect in pool config
+Client_Oracledb.prototype.dialectValidateConnectionPool = function(connection) {
+  return new Promise.resolve(null);
+};
+
 class Oracledb_Formatter extends Oracle_Formatter {
 
   // Checks whether a value is a function... if it is, we compile it
