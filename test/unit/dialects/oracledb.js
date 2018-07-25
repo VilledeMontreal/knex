@@ -3,79 +3,79 @@
 'use strict';
 var _ = require('lodash');
 var expect = require('chai').expect;
-var knex   = require('../../../knex');
+var knex = require('../../../knex');
 var config = require('../../knexfile');
 
-describe("OracleDb externalAuth", function() {
+describe('OracleDb externalAuth', function() {
   var knexInstance = knex({
     client: 'oracledb',
     connection: {
-      user          : "user",
-      password      : "password",
-      connectString : 'connect-string',
-      externalAuth  : true,
-      host          : "host",
-      database      : "database"
-    }
+      user: 'user',
+      password: 'password',
+      connectString: 'connect-string',
+      externalAuth: true,
+      host: 'host',
+      database: 'database',
+    },
   });
   var spy;
 
   before(function() {
-    spy = sinon.spy(knexInstance.client.driver, "getConnection");
+    spy = sinon.spy(knexInstance.client.driver, 'getConnection');
   });
 
   it('externalAuth and connectString should be sent to the getConnection', function() {
-      var connectionWithExternalAuth = {
-          connectString: "connect-string",
-          externalAuth: true
-      }
-      knexInstance.client.acquireRawConnection().then(
-          function(resolve) {},
-          function(reject) {}
-      );
-      expect(spy).to.have.callCount(1);
-      expect(spy).to.have.been.calledWith(connectionWithExternalAuth);
+    var connectionWithExternalAuth = {
+      connectString: 'connect-string',
+      externalAuth: true,
+    };
+    knexInstance.client
+      .acquireRawConnection()
+      .then(function(resolve) {}, function(reject) {});
+    expect(spy).to.have.callCount(1);
+    expect(spy).to.have.been.calledWith(connectionWithExternalAuth);
   });
 
   after(function() {
     knexInstance.client.driver.getConnection.restore();
   });
-
 });
 
-describe("OracleDb parameters", function() {
-
-  describe("with fetchAsString parameter", function() {
+describe('OracleDb parameters', function() {
+  describe('with fetchAsString parameter', function() {
     var knexClient;
 
     before(function() {
       var conf = _.clone(config.oracledb);
-      conf.fetchAsString = [ 'number', 'DATE', 'cLOb'];
+      conf.fetchAsString = ['number', 'DATE', 'cLOb'];
       knexClient = knex(conf);
       return knexClient;
     });
 
     it('on float', function() {
-      return knexClient.raw('select 7.329 as "field" from dual').then(function(result) {
-        expect(result[0]).to.be.ok;
-        expect(result[0].field).to.be.a('string');
-      })
+      return knexClient
+        .raw('select 7.329 as "field" from dual')
+        .then(function(result) {
+          expect(result[0]).to.be.ok;
+          expect(result[0].field).to.be.a('string');
+        });
     });
 
     it('on date', function() {
-      return knexClient.raw('select CURRENT_DATE as "field" from dual').then(function(result) {
-        expect(result[0]).to.be.ok;
-        expect(result[0].field).to.be.a('string');
-      })
+      return knexClient
+        .raw('select CURRENT_DATE as "field" from dual')
+        .then(function(result) {
+          expect(result[0]).to.be.ok;
+          expect(result[0].field).to.be.a('string');
+        });
     });
 
     after(function() {
       return knexClient.destroy();
     });
-
   });
 
-  describe("without fetchAsString parameter", function() {
+  describe('without fetchAsString parameter', function() {
     var knexClient;
 
     before(function() {
@@ -84,64 +84,64 @@ describe("OracleDb parameters", function() {
     });
 
     it('on float', function() {
-      return knexClient.raw('select 7.329 as "field" from dual').then(function(result) {
-        expect(result[0]).to.be.ok;
-        expect(result[0].field).to.not.be.a('string');
-      })
+      return knexClient
+        .raw('select 7.329 as "field" from dual')
+        .then(function(result) {
+          expect(result[0]).to.be.ok;
+          expect(result[0].field).to.not.be.a('string');
+        });
     });
 
     it('on date', function() {
-      return knexClient.raw('select CURRENT_DATE as "field" from dual').then(function(result) {
-        expect(result[0]).to.be.ok;
-        expect(result[0].field).to.not.be.a('string');
-      })
+      return knexClient
+        .raw('select CURRENT_DATE as "field" from dual')
+        .then(function(result) {
+          expect(result[0]).to.be.ok;
+          expect(result[0].field).to.not.be.a('string');
+        });
     });
 
     after(function() {
       return knexClient.destroy();
     });
-
   });
 
   describe("OracleDb driver's pool", function() {
     var knexInstance = knex({
       client: 'oracledb',
       connection: {
-        user          : "service",
-        password      : "account",
-        connectString : 'connect-string',
-        host          : "host",
-        database      : "database",
+        user: 'service',
+        password: 'account',
+        connectString: 'connect-string',
+        host: 'host',
+        database: 'database',
         pool: {
-          delegateToDriversDialect: true
-        }
-      }
+          delegateToDriversDialect: true,
+        },
+      },
     });
     var spy;
-  
+
     before(function() {
-      spy = sinon.spy(knexInstance.client.driver, "createPool");
+      spy = sinon.spy(knexInstance.client.driver, 'createPool');
     });
-  
+
     it('bypass knex pool when delegateToDriversDialect is true', function() {
-        var poolWithHeterogeneous = {
-            user          : "service",
-            password      : "account",
-            connectString: "connect-string",
-            homogeneous   : false
-        }
-        knexInstance.client.acquireRawConnection().then(
-            function(resolve) {},
-            function(reject) {}
-        );
-        expect(spy).to.have.callCount(1);
-        expect(spy).to.have.been.calledWith(poolWithHeterogeneous);
+      var poolWithHeterogeneous = {
+        user: 'service',
+        password: 'account',
+        connectString: 'connect-string',
+        homogeneous: false,
+      };
+      knexInstance.client
+        .acquireRawConnection()
+        .then(function(resolve) {}, function(reject) {});
+      expect(spy).to.have.callCount(1);
+      expect(spy).to.have.been.calledWith(poolWithHeterogeneous);
     });
-  
+
     after(function() {
       knexInstance.client.driver.createPool.restore();
     });
-  
   });
-  
 });
