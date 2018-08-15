@@ -41,6 +41,41 @@ describe('OracleDb externalAuth', function() {
   });
 });
 
+describe.skip('OracleDb proxy connection', function() {
+  var knexInstance = knex({
+    client: 'oracledb',
+    connection: {
+      user: 'user',
+      password: 'password',
+      connectString: 'connect-string',
+      host: 'host',
+      database: 'database',
+      delegateToDriverDialect: true, // required for proxy
+    },
+  });
+  var spy;
+
+  before(function() {
+    spy = sinon.spy(knexInstance.client.driver.Pool.prototype, 'getConnection');
+  });
+
+  it(`honoring .options({ user: 'enduser' }) syntax`, function() {
+    var endUser = {
+      user: 'enduser', // the session user
+    };
+    knexInstance('dual')
+      .options({ user: 'enduser' })
+      .client.acquireRawConnection()
+      .then(function(resolve) {}, function(reject) {});
+    expect(spy).to.have.callCount(1);
+    expect(spy).to.have.been.calledWith(endUser);
+  });
+
+  after(function() {
+    knexInstance.client.driver.Pool.prototype.getConnection.restore();
+  });
+});
+
 describe('OracleDb parameters', function() {
   describe('with fetchAsString parameter', function() {
     var knexClient;
@@ -71,6 +106,7 @@ describe('OracleDb parameters', function() {
     });
 
     after(function() {
+      console.log('in with fetchAsString parameter (after)');
       return knexClient.destroy();
     });
   });
@@ -107,41 +143,58 @@ describe('OracleDb parameters', function() {
   });
 
   describe("OracleDb driver's pool", function() {
-    var knexInstance = knex({
-      client: 'oracledb',
-      connection: {
-        user: 'service',
-        password: 'account',
-        connectString: 'connect-string',
-        host: 'host',
-        database: 'database',
-        pool: {
-          delegateToDriversDialect: true,
-        },
-      },
-    });
+    var knexInstance;
     var spy;
+    var connection;
 
     before(function() {
+      knexInstance = knex({
+        client: 'oracledb',
+        connection: {
+          user: 'service',
+          password: 'account',
+          connectString: 'connect-string',
+          host: 'host',
+          database: 'database',
+        },
+        pool: {
+          delegateToDriverDialect: true,
+          max: 1, // Required so to create the pool
+          min: 1, // To avoid Error: Tarn: opt.max is smaller than opt.min
+        },
+      });
       spy = sinon.spy(knexInstance.client.driver, 'createPool');
+      return knexInstance;
     });
 
-    it('bypass knex pool when delegateToDriversDialect is true', function() {
+    it('bypass knex pool when delegateToDriverDialect is true', function() {
       var poolWithHeterogeneous = {
         user: 'service',
         password: 'account',
         connectString: 'connect-string',
         homogeneous: false,
       };
-      knexInstance.client
-        .acquireRawConnection()
-        .then(function(resolve) {}, function(reject) {});
-      expect(spy).to.have.callCount(1);
-      expect(spy).to.have.been.calledWith(poolWithHeterogeneous);
+      return knexInstance.client.acquireRawConnection().then(
+        function(resolve) {
+          connection = resolve;
+          expect(spy).to.have.callCount(1);
+          expect(spy).to.have.been.calledWith(poolWithHeterogeneous);
+        },
+        function(reject) {}
+      );
     });
 
     after(function() {
+      var prom;
+
       knexInstance.client.driver.createPool.restore();
+
+      if (connection) {
+        prom = knexInstance.client.destroyRawConnection(connection);
+      } else {
+        prom = Promise.resolve();
+      }
+      return prom.then(() => knexInstance.destroy());
     });
   });
 });

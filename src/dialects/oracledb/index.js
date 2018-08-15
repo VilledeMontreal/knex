@@ -11,8 +11,10 @@ const stream = require('stream');
 const Transaction = require('./transaction');
 const Client_Oracle = require('../oracle');
 const Oracle_Formatter = require('../oracle/formatter');
+const debugDialect = require('debug')('knex:oracledb');
 
 function Client_Oracledb() {
+  debugDialect('Client_Oracledb()');
   Client_Oracle.apply(this, arguments);
   // Node.js only have 4 background threads by default, oracledb needs one by connection
   if (this.driver) {
@@ -25,7 +27,10 @@ inherits(Client_Oracledb, Client_Oracle);
 
 Client_Oracledb.prototype.driverName = 'oracledb';
 
+Client_Oracledb.prototype.canDialectManagePool = true;
+
 Client_Oracledb.prototype._driver = function() {
+  debugDialect('_driver');
   const client = this;
   const oracledb = require('oracledb');
   client.fetchAsString = [];
@@ -76,6 +81,7 @@ Client_Oracledb.prototype.prepBindings = function(bindings) {
 // Get a raw connection, called by the `pool` whenever a new
 // connection needs to be added to the pool.
 Client_Oracledb.prototype.acquireRawConnection = function() {
+  debugDialect('acquireRawConnection');
   const client = this;
   const asyncConnection = new Promise(function(resolver, rejecter) {
     // If external authentication dont have to worry about username/password and
@@ -394,35 +400,77 @@ Client_Oracledb.prototype.processResponse = function(obj, runner) {
 
 // Required for case using Oracle's poolling instead of tarn one
 // See delegatedToDriversDialect in pool config
-Client_Oracledb.prototype.dialectAcquireConnectionPool = function(oraclePool) {
+Client_Oracledb.prototype._dialectAcquireConnectionPool = function(oraclePool) {
   return new Promise.resolve(null);
 };
 
 // Required for case using Oracle's poolling instead of tarn one
 // See delegatedToDriversDialect in pool config
-Client_Oracledb.prototype.dialectInitializePool = function(config) {
-  return;
+Client_Oracledb.prototype._dialectInitializePool = function(
+  driver,
+  knexConfig,
+  done
+) {
+  // in this example we use oracle driver's connection API
+  // for that knexConfig is in fact oracleDbConfig and
+  // driver is in fact oracledb.
+  //
+  // We create the pool with an application/service account
+  // (which has already been provided in user/password fields of connection config).
+  // This is required because we want to impersonate the end-user
+  // when doing the driver.getConnection() call (homogenous=false)
+  const client = this;
+  debugDialect('_dialectInitializePool');
+  knexConfig.pool = knexConfig.pool || {};
+  knexConfig.pool.options = knexConfig.pool.options || {};
+  knexConfig.pool.options.homogeneous = false;
+  debugDialect('About to call driver.createPool()');
+  return client.driver
+    .createPool(knexConfig.pool.options)
+    .then((pool) => {
+      debugDialect('dialectInitializePool (then)');
+      return pool;
+    })
+    .catch((err) => {
+      debugDialect('dialectInitializePool (catch)');
+      return err;
+    });
 };
 
 // Required for case using Oracle's poolling instead of tarn one
 // See delegatedToDriversDialect in pool config
-Client_Oracledb.prototype.dialectDestroyPool = function(cb) {
-  if (cb) {
-    return cb();
-  } else {
-    return new Promise.resolve(null);
-  }
+//
+// All acquired connection must be back before calling this
+// See: https://github.com/oracle/node-oracledb/issues/836
+Client_Oracledb.prototype._dialectDestroyPool = function(
+  driver,
+  dialectPool,
+  done
+) {
+  debugDialect('_dialectDestroyPool');
+
+  return dialectPool
+    .close()
+    .then(() => debugDialect(`handling ok from dialectPool.close`))
+    .catch(() =>
+      debugDialect(
+        'handling err from dialectPool.close (%s)',
+        JSON.stringify(err)
+      )
+    );
 };
 
 // Required for case using Oracle's poolling instead of tarn one
 // See delegatedToDriversDialect in pool config
-Client_Oracledb.prototype.dialectReleaseConnectionPool = function(connection) {
+Client_Oracledb.prototype._dialectReleaseConnectionPool = function(connection) {
   return new Promise.resolve(null);
 };
 
 // Required for case using Oracle's poolling instead of tarn one
 // See delegatedToDriversDialect in pool config
-Client_Oracledb.prototype.dialectValidateConnectionPool = function(connection) {
+Client_Oracledb.prototype._dialectValidateConnectionPool = function(
+  connection
+) {
   return new Promise.resolve(null);
 };
 

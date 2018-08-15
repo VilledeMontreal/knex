@@ -45,6 +45,7 @@ ENV LD_LIBRARY_PATH /u01/app/oracle/product/11.2.0/xe/lib
 ENV KNEX_TEST /oracle-config.js
 ENV DB "oracledb"
 ENV KNEX_TIMEOUT 60000
+#ENV DEBUG "knex:oracledb,knex:client,knex:query,knex:bindings,knex:tx"
 
 ADD . knex
 

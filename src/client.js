@@ -48,8 +48,10 @@ function Client(config = {}) {
 
   this.connectionSettings = cloneDeep(config.connection || {});
   if (this.driverName && config.connection) {
+    debug('about to call initializeDriver()');
     this.initializeDriver();
     if (!config.pool || (config.pool && config.pool.max !== 0)) {
+      debug('about to call initializePool()');
       this.initializePool(config);
     }
   }
@@ -206,6 +208,7 @@ assign(Client.prototype, {
   initializeDriver() {
     try {
       this.driver = this._driver();
+      debug('driver inited!');
     } catch (e) {
       this.logger.error(
         `Knex: run\n$ npm install ${this.driverName} --save\n${e.stack}`
@@ -300,13 +303,25 @@ assign(Client.prototype, {
       config.pool.delegateToDriverDialect = false;
     }
 
+    if (this.dialectPool) {
+      this.logger.warn('The dialect pool has already been initialized');
+      return;
+    }
+
     if (
       config.pool &&
       config.pool.delegateToDriverDialect &&
       this.canDialectManagePool
     ) {
       this.logger.debug("Using dialect's pooling");
-      this.dialectInitializePool();
+      this.dialectInitializePool(this.driver, config)
+        .then((dialectPool) => {
+          this.dialectPool = dialectPool;
+        })
+        .catch((err) => {
+          this.dialectPool = void 0;
+          debug('dialectInitializePool failed with %s', JSON.stringify(err));
+        });
     }
 
     if (this.pool) {
@@ -314,6 +329,7 @@ assign(Client.prototype, {
       return;
     }
 
+    debug('new tarn Pool');
     this.pool = new Pool(this.getPoolSettings(config.pool));
   },
 
@@ -354,9 +370,18 @@ assign(Client.prototype, {
 
   // Destroy the current connection pool for the client.
   destroy(callback) {
-    const maybeDestroy = this.pool && this.pool.destroy();
+    debug('destroy');
+    const maybeDestroy =
+      this.config.pool && this.config.pool.delegateToDriverDialect
+        ? this.dialectDestroyPool(this.driver, this.dialectPool)
+        : Promise.resolve('no dialect pool to destroy');
 
     return Promise.resolve(maybeDestroy)
+      .then((result) => {
+        return this.pool
+          ? this.pool.destroy()
+          : Promise.resolve('no pool to destroy');
+      })
       .then(() => {
         this.pool = void 0;
 
@@ -365,6 +390,7 @@ assign(Client.prototype, {
         }
       })
       .catch((err) => {
+        debug('in destroy err = %s', JSON.stringify(err));
         if (typeof callback === 'function') {
           callback(err);
         }
@@ -406,14 +432,31 @@ assign(Client.prototype, {
 
   // Required for case using Oracle's pooling instead of tarn one
   // See delegatedToDriversDialect in pool config
-  dialectInitializePool(config) {
-    throw new Error('Pooling not supported for this dialect');
+  dialectInitializePool(driver, knexConfig) {
+    if (knexConfig.pool.insteadOfCreatePool) {
+      debug('dialectInitializePool:insteadOf');
+      return Promise.promisify(knexConfig.pool.insteadOfCreatePool)(
+        driver,
+        knexConfig
+      );
+    }
+    return this._dialectInitializePool(driver, knexConfig).catch((err) => {
+      debug('dialectInitializePool:catch err %s', JSON.stringify(err));
+      return err;
+    });
   },
 
   // Required for case using Oracle's poolling instead of tarn one
   // See delegatedToDriversDialect in pool config
-  dialectDestroyPool(cb) {
-    throw new Error('Pooling not supported for this dialect');
+  dialectDestroyPool(driver, dialectPool) {
+    if (this.config.pool.insteadOfReleasePool) {
+      debug('dialectDestroyPool: calling insteadOfReleasePool');
+      return Promise.promisify(this.config.pool.insteadOfReleasePool)(
+        driver,
+        dialectPool
+      );
+    }
+    return this._dialectDestroyPool(driver, dialectPool);
   },
 
   // Required for case using Oracle's poolling instead of tarn one
