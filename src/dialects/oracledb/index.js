@@ -452,7 +452,7 @@ Client_Oracledb.prototype._dialectDestroyPool = function(
   return dialectPool
     .close()
     .then(() => debugDialect(`handling ok from dialectPool.close`))
-    .catch(() =>
+    .catch((err) =>
       debugDialect(
         'handling err from dialectPool.close (%s)',
         JSON.stringify(err)
