@@ -371,23 +371,25 @@ assign(Client.prototype, {
   // Destroy the current connection pool for the client.
   destroy(callback) {
     debug('destroy');
-    const maybeDestroy =
+
+    const maybeDialectDestroy =
       this.config.pool && this.config.pool.delegateToDriverDialect
         ? this.dialectDestroyPool(this.driver, this.dialectPool)
-        : Promise.resolve('no dialect pool to destroy');
+        : Promise.resolve();
 
-    return Promise.resolve(maybeDestroy)
-      .then((result) => {
-        return this.pool
-          ? this.pool.destroy()
-          : Promise.resolve('no pool to destroy');
-      })
+    const maybeDestroy = this.pool ? this.pool.destroy() : Promise.resolve();
+
+    return Promise.resolve(
+      maybeDialectDestroy.then((result) => Promise.resolve(maybeDestroy))
+    )
       .then(() => {
         this.pool = void 0;
 
         if (typeof callback === 'function') {
           callback();
         }
+
+        return Promise.resolve();
       })
       .catch((err) => {
         debug('in destroy err = %s', JSON.stringify(err));
