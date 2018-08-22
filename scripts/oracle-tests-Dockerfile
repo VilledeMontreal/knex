@@ -31,29 +31,53 @@ RUN . $HOME/.nvm/nvm.sh && nvm install 10
 
 RUN echo 'module.exports = {\
   oracledb: {\
-    user          : "system",\
-    password      : "oracle",\
-    connectString : "localhost/XE",\
-    stmtCacheSize : 0\
+    user            : "system",\
+    password        : "oracle",\
+    connectString   : "localhost/XE",\
+    stmtCacheSize   : 0,\
+    enduser         : "enduser",\
+    otherenduser    : "otherenduser",\
   }\
 }' > /oracle-config.js
+
+RUN echo $' \n\
+  CONNECT system/oracle@localhost/XE \n\
+  -- end user \n\
+  CREATE USER enduser IDENTIFIED BY "enduser"; \n\
+  GRANT CONNECT, RESOURCE TO enduser; \n\
+  GRANT CREATE SESSION to enduser; \n\
+  GRANT UNLIMITED TABLESPACE TO enduser; \n\
+  -- other end user \n\
+  CREATE USER otherenduser IDENTIFIED BY "otherenduser"; \n\
+  GRANT CONNECT, RESOURCE TO otherenduser; \n\
+  GRANT CREATE SESSION to otherenduser; \n\
+  GRANT UNLIMITED TABLESPACE TO otherenduser; \n\
+  -- grant proxyuser (system) to impersonate enduser/otherenduser \n\
+  ALTER USER enduser GRANT CONNECT THROUGH system; \n\
+  ALTER USER otherenduser GRANT CONNECT THROUGH system; \n\
+  quit \n\
+' > /create-proxy-user.sql
 
 ENV ORACLE_HOME /u01/app/oracle/product/11.2.0/xe
 ENV ORACLE_SID XE 
 ENV OCI_LIB_DIR /u01/app/oracle/product/11.2.0/xe/lib
 ENV LD_LIBRARY_PATH /u01/app/oracle/product/11.2.0/xe/lib
 ENV KNEX_TEST /oracle-config.js
-ENV DB "oracledb"
+# sqlite3 seems to be required to certain tests to pass
+ENV DB "oracledb sqlite3"
 ENV KNEX_TIMEOUT 60000
 #ENV DEBUG "knex:oracledb,knex:client,knex:query,knex:bindings,knex:tx"
+ENV DEBUG "knex:oracledb,knex:client"
 
 ADD . knex
 
 CMD /usr/sbin/startup.sh && \
+  /u01/app/oracle/product/11.2.0/xe/bin/sqlplus -s /nolog @/create-proxy-user.sql && \
   . $HOME/.nvm/nvm.sh && \
   nvm use ${NODE_VER:-10} && \
   cd knex && \
   npm install && \
   npm install oracledb && \
+  npm install sqlite3 && \
   npm run build && \
   npm run plaintest  

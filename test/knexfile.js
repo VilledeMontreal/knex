@@ -71,6 +71,8 @@ var testConfigs = {
       connectString: 'localhost/XE',
       // https://github.com/oracle/node-oracledb/issues/525
       stmtCacheSize: 0,
+      enduser: 'travisenduser',
+      otherenduser: 'travisotherenduser',
     },
     pool: pool,
     migrations: migrations,
