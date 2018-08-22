@@ -54,11 +54,16 @@ function Client(config = {}) {
       debug('about to call initializePool()');
       this.initializePool(config);
     }
+    if (config.pool && config.pool.delegateToDriverDialect) {
+      debug(`about to postponeInitDialectPool()`);
+      this.postponeInitDialectPool(config);
+    }
   }
   this.valueForUndefined = this.raw('DEFAULT');
   if (config.useNullAsDefault) {
     this.valueForUndefined = null;
   }
+  debug('end of Client() call');
 }
 inherits(Client, EventEmitter);
 
@@ -292,6 +297,17 @@ assign(Client.prototype, {
   },
 
   initializePool(config = this.config) {
+    if (this.pool) {
+      this.logger.warn('The pool has already been initialized');
+      return;
+    }
+
+    debug('new tarn Pool');
+    this.pool = new Pool(this.getPoolSettings(config.pool));
+  },
+
+  // postpone because we are in a context of constructor method
+  postponeInitDialectPool(config = this.config) {
     if (
       config.pool &&
       config.pool.delegateToDriverDialect &&
@@ -313,24 +329,16 @@ assign(Client.prototype, {
       config.pool.delegateToDriverDialect &&
       this.canDialectManagePool
     ) {
-      this.logger.debug("Using dialect's pooling");
-      this.dialectInitializePool(this.driver, config)
-        .then((dialectPool) => {
-          this.dialectPool = dialectPool;
-        })
-        .catch((err) => {
-          this.dialectPool = void 0;
-          debug('dialectInitializePool failed with %s', JSON.stringify(err));
-        });
-    }
+      this.dialectPoolOptions = config.pool.options || {};
 
-    if (this.pool) {
-      this.logger.warn('The pool has already been initialized');
+      this.mustInitDialectPool = true;
+      debug(`postpone initializing of dialect's pool`);
       return;
     }
 
-    debug('new tarn Pool');
-    this.pool = new Pool(this.getPoolSettings(config.pool));
+    if (!this.mustInitDialectPool) {
+      this.logger.warn('No postpone of initialize dialect pool');
+    }
   },
 
   validateConnection(connection) {
@@ -338,10 +346,14 @@ assign(Client.prototype, {
   },
 
   // Acquire a connection from the pool.
-  acquireConnection() {
+  acquireConnection(builderOptionsClient) {
+    debug(`acquireConnection(${JSON.stringify(builderOptionsClient)})`);
     if (!this.pool) {
       return Promise.reject(new Error('Unable to acquire a connection'));
     }
+
+    // Required to issue getConnection for connected end-user
+    this.connectionSettings.client = builderOptionsClient;
 
     return Promise.try(() => this.pool.acquire().promise)
       .tap((connection) => {
@@ -429,7 +441,16 @@ assign(Client.prototype, {
   // Required for case using Oracle's pooling instead of tarn one
   // See delegatedToDriversDialect in pool config
   dialectAcquireConnectionPool(oraclePool) {
-    throw new Error('Pooling not supported for this dialect');
+    if (this.config.pool.insteadOfGetConnection) {
+      debug('dialectGetConnection:insteadOf');
+      return Promise.promisify(this.config.pool.insteadOfGetConnection)(
+        oraclePool
+      );
+    }
+    return this._dialectGetConnection(oraclePool).catch((err) => {
+      debug('dialectGetConnection:catch err %s', JSON.stringify(err));
+      return err;
+    });
   },
 
   // Required for case using Oracle's pooling instead of tarn one
@@ -442,10 +463,15 @@ assign(Client.prototype, {
         knexConfig
       );
     }
-    return this._dialectInitializePool(driver, knexConfig).catch((err) => {
-      debug('dialectInitializePool:catch err %s', JSON.stringify(err));
-      return err;
-    });
+    return this._dialectInitializePool(driver, knexConfig)
+      .then((pool) => {
+        debug('dialectInitializePool:then');
+        return pool;
+      })
+      .catch((err) => {
+        debug(`dialectInitializePool:catch (${JSON.stringify(err)})`);
+        throw err;
+      });
   },
 
   // Required for case using Oracle's poolling instead of tarn one
@@ -463,8 +489,20 @@ assign(Client.prototype, {
 
   // Required for case using Oracle's poolling instead of tarn one
   // See delegatedToDriversDialect in pool config
-  dialectReleaseConnectionPool(connection) {
-    throw new Error('Pooling not supported for this dialect');
+  dialectReleaseConnectionPool(oraclePool, connection) {
+    if (this.config.pool.insteadOfReleaseConnection) {
+      debug('dialectReleaseConnection:insteadOf');
+      return Promise.promisify(this.config.pool.insteadOfReleaseConnection)(
+        oraclePool,
+        connection
+      );
+    }
+    return this._dialectReleaseConnection(oraclePool, connection).catch(
+      (err) => {
+        debug('dialectReleaseConnection:catch err %s', JSON.stringify(err));
+        return err;
+      }
+    );
   },
 
   // Required for case using Oracle's poolling instead of tarn one

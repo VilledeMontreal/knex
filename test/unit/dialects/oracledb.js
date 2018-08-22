@@ -5,35 +5,75 @@ var _ = require('lodash');
 var expect = require('chai').expect;
 var knex = require('../../../knex');
 var config = require('../../knexfile');
+var configDialectPool4Proxy;
+var configDialectPool1Account;
+const debug = require('debug')('knex:oracledb');
+
+beforeEach(function() {
+  // Init here to avoid side effect if tampered in a test
+  configDialectPool4Proxy = _.cloneDeep(config.oracledb);
+  configDialectPool4Proxy.pool = {
+    delegateToDriverDialect: true,
+    min: 1,
+    max: 1,
+    options: {
+      homogeneous: false,
+      user: config.oracledb.connection.user,
+      password: config.oracledb.connection.password,
+      connectString: config.oracledb.connection.connectString,
+      stmtCacheSize: 0,
+    },
+  };
+  configDialectPool1Account = _.cloneDeep(config.oracledb);
+  configDialectPool1Account.pool = {
+    delegateToDriverDialect: true,
+    min: 1,
+    max: 1,
+    options: {
+      homogeneous: true,
+      user: config.oracledb.connection.user,
+      password: config.oracledb.connection.password,
+      connectString: config.oracledb.connection.connectString,
+      stmtCacheSize: 0,
+    },
+  };
+});
 
 describe('OracleDb externalAuth', function() {
-  var knexInstance = knex({
-    client: 'oracledb',
-    connection: {
-      user: 'user',
-      password: 'password',
-      connectString: 'connect-string',
-      externalAuth: true,
-      host: 'host',
-      database: 'database',
-    },
-  });
+  var knexInstance;
   var spy;
+  var conf;
 
   before(function() {
+    conf = _.cloneDeep(config.oracledb);
+    conf.connection.externalAuth = true;
+    conf.connection.host = 'host';
+    conf.connection.database = 'database';
+    knexInstance = knex(conf);
     spy = sinon.spy(knexInstance.client.driver, 'getConnection');
+    return knexInstance;
   });
 
   it('externalAuth and connectString should be sent to the getConnection', function() {
     var connectionWithExternalAuth = {
-      connectString: 'connect-string',
+      connectString: conf.connection.connectString,
       externalAuth: true,
     };
-    knexInstance.client
-      .acquireRawConnection()
-      .then(function(resolve) {}, function(reject) {});
-    expect(spy).to.have.callCount(1);
-    expect(spy).to.have.been.calledWith(connectionWithExternalAuth);
+
+    function expectCallWithGoodParams() {
+      expect(spy).to.have.callCount(1);
+      expect(spy).to.have.been.calledWith(connectionWithExternalAuth);
+    }
+
+    return knexInstance.client.acquireRawConnection().then(
+      function(resolve) {
+        expectCallWithGoodParams;
+      },
+      function(reject) {
+        debug(`rejected with ${JSON.stringify(reject)}`);
+        expectCallWithGoodParams;
+      }
+    );
   });
 
   after(function() {
@@ -41,38 +81,103 @@ describe('OracleDb externalAuth', function() {
   });
 });
 
-describe.skip('OracleDb proxy connection', function() {
-  var knexInstance = knex({
-    client: 'oracledb',
-    connection: {
-      user: 'user',
-      password: 'password',
-      connectString: 'connect-string',
-      host: 'host',
-      database: 'database',
-      delegateToDriverDialect: true, // required for proxy
-    },
-  });
+describe('OracleDb proxy connection', function() {
+  var knexInstance;
   var spy;
 
   before(function() {
-    spy = sinon.spy(knexInstance.client.driver.Pool.prototype, 'getConnection');
+    knexInstance = knex(configDialectPool4Proxy);
+    spy = sinon.spy(knexInstance.client, 'acquireConnection');
   });
 
-  it(`honoring .options({ user: 'enduser' }) syntax`, function() {
-    var endUser = {
-      user: 'enduser', // the session user
+  it(`builder options should be sent to acquireConnection`, function() {
+    var clientInfo = {
+      user: config.oracledb.connection.enduser, // the session user
     };
-    knexInstance('dual')
-      .options({ user: 'enduser' })
-      .client.acquireRawConnection()
-      .then(function(resolve) {}, function(reject) {});
-    expect(spy).to.have.callCount(1);
-    expect(spy).to.have.been.calledWith(endUser);
+    const expectCallWithGoodParams = function() {
+      expect(spy).to.have.callCount(1);
+      expect(spy).to.have.been.calledWith(clientInfo);
+    };
+    return knexInstance('DUAL')
+      .options({ client: clientInfo })
+      .then(
+        function(resolve) {
+          expectCallWithGoodParams();
+        },
+        function(reject) {
+          debug(`rejected with ${JSON.stringify(reject)}`);
+          expectCallWithGoodParams();
+        }
+      );
   });
 
   after(function() {
-    knexInstance.client.driver.Pool.prototype.getConnection.restore();
+    knexInstance.client.acquireConnection.restore();
+  });
+});
+
+describe('OracleDb mix of proxy/non-proxy request', function() {
+  var knexInstance;
+  var spy;
+
+  before(function() {
+    knexInstance = knex(configDialectPool4Proxy);
+    spy = sinon.spy(knexInstance.client, 'acquireConnection');
+  });
+
+  it(`builder options should not affect subsequent call`, function() {
+    var clientInfoFirstCall = {
+      user: config.oracledb.connection.enduser, // the session user
+    };
+    var clientInfoThirdCall = {
+      user: config.oracledb.connection.otherenduser, // the session user
+    };
+    const expectCallWithGoodParams = function() {
+      expect(spy).to.have.callCount(3);
+
+      expect(spy.firstCall.args).to.not.equal(spy.secondCall.args);
+      expect(spy.firstCall.args).to.not.equal(spy.thirdCall.args);
+      expect(spy.secondCall.args).to.not.equal(spy.thirdCall.args);
+    };
+    return knexInstance('DUAL')
+      .options({ client: clientInfoFirstCall })
+      .then(function(resolve) {
+        return knexInstance('DUAL');
+      })
+      .then(function(resolve) {
+        return knexInstance('DUAL').options({ client: clientInfoThirdCall });
+      })
+      .then(
+        function(resolve) {
+          expectCallWithGoodParams();
+        },
+        function(reject) {
+          debug(`rejected with ${JSON.stringify(reject)}`);
+          expectCallWithGoodParams();
+        }
+      );
+  });
+
+  it('allows you to select with impersonated user', function() {
+    const rows = [];
+    return knexInstance('DUAL')
+      .select(knexInstance.raw('USER'))
+      .options({ client: { user: config.oracledb.connection.otherenduser } })
+      .stream(function(rowStream) {
+        rowStream.on('data', function(row) {
+          rows.push(row);
+        });
+      })
+      .then(function() {
+        expect(rows).to.have.lengthOf(1);
+        expect(rows[0][0]).to.equal(
+          config.oracledb.connection.otherenduser.toUpperCase()
+        );
+      });
+  });
+
+  after(function() {
+    knexInstance.client.acquireConnection.restore();
   });
 });
 
@@ -106,7 +211,6 @@ describe('OracleDb parameters', function() {
     });
 
     after(function() {
-      console.log('in with fetchAsString parameter (after)');
       return knexClient.destroy();
     });
   });
@@ -148,39 +252,32 @@ describe('OracleDb parameters', function() {
     var connection;
 
     before(function() {
-      knexInstance = knex({
-        client: 'oracledb',
-        connection: {
-          user: 'service',
-          password: 'account',
-          connectString: 'connect-string',
-          host: 'host',
-          database: 'database',
-        },
-        pool: {
-          delegateToDriverDialect: true,
-          max: 1, // Required so to create the pool
-          min: 1, // To avoid Error: Tarn: opt.max is smaller than opt.min
-        },
-      });
+      knexInstance = knex(configDialectPool1Account);
       spy = sinon.spy(knexInstance.client.driver, 'createPool');
       return knexInstance;
     });
 
-    it('bypass knex pool when delegateToDriverDialect is true', function() {
+    it('creates oracle pool when delegateToDriverDialect is true', function() {
       var poolWithHeterogeneous = {
-        user: 'service',
-        password: 'account',
-        connectString: 'connect-string',
-        homogeneous: false,
+        homogeneous: true,
+        user: config.oracledb.connection.user,
+        password: config.oracledb.connection.password,
+        connectString: config.oracledb.connection.connectString,
+        stmtCacheSize: 0,
       };
-      return knexInstance.client.acquireRawConnection().then(
+      const expectCallWithGoodParams = function() {
+        expect(spy).to.have.callCount(1);
+        expect(spy).to.have.been.calledWith(poolWithHeterogeneous);
+      };
+      return knexInstance('DUAL').then(
         function(resolve) {
           connection = resolve;
-          expect(spy).to.have.callCount(1);
-          expect(spy).to.have.been.calledWith(poolWithHeterogeneous);
+          expectCallWithGoodParams();
         },
-        function(reject) {}
+        function(reject) {
+          debug(`rejected with ${JSON.stringify(reject)}`);
+          expectCallWithGoodParams();
+        }
       );
     });
 

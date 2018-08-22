@@ -23,7 +23,9 @@ assign(Runner.prototype, {
   run() {
     const runner = this;
     return (
-      Promise.using(this.ensureConnection(), function(connection) {
+      Promise.using(this.ensureConnection(runner.builder._options), function(
+        connection
+      ) {
         runner.connection = connection;
 
         runner.client.emit('start', runner.builder);
@@ -79,26 +81,28 @@ assign(Runner.prototype, {
     const stream = new PassThrough({ objectMode: true });
 
     let hasConnection = false;
-    const promise = Promise.using(this.ensureConnection(), function(
-      connection
-    ) {
-      hasConnection = true;
-      runner.connection = connection;
-      try {
-        const sql = runner.builder.toSQL();
 
-        if (isArray(sql) && hasHandler) {
-          throw new Error(
-            'The stream may only be used with a single query statement.'
-          );
+    const promise = Promise.using(
+      this.ensureConnection(runner.builder._options),
+      function(connection) {
+        hasConnection = true;
+        runner.connection = connection;
+        try {
+          const sql = runner.builder.toSQL();
+
+          if (isArray(sql) && hasHandler) {
+            throw new Error(
+              'The stream may only be used with a single query statement.'
+            );
+          }
+
+          return runner.client.stream(runner.connection, sql, stream, options);
+        } catch (e) {
+          stream.emit('error', e);
+          throw e;
         }
-
-        return runner.client.stream(runner.connection, sql, stream, options);
-      } catch (e) {
-        stream.emit('error', e);
-        throw e;
       }
-    });
+    );
 
     // If a function is passed to handle the stream, send the stream
     // there and return the promise, otherwise just return the stream
@@ -230,12 +234,29 @@ assign(Runner.prototype, {
   },
 
   // Check whether there's a transaction flag, and that it has a connection.
-  ensureConnection() {
-    if (this.connection) {
+  // "builder" means (query, schema, or raw)
+  ensureConnection(builderOptions) {
+    // Avoid recycle connection when impersonating user because
+    // the specific connection is impersonating builderOptions.user and nobody else
+    if (
+      this.connection &&
+      (!builderOptions || !builderOptions.client || !builderOptions.client.user)
+    ) {
       return Promise.resolve(this.connection);
     }
+
+    // builderOptions is an array of all options that has been setted
+    // just pick the one related to client authentication/getConnection
+    // and remove the root named client
+    let builderOptionsClient = builderOptions
+      ? builderOptions.find((value) => value.client)
+      : undefined;
+    if (builderOptionsClient) {
+      builderOptionsClient = builderOptionsClient.client;
+    }
+
     return this.client
-      .acquireConnection()
+      .acquireConnection(builderOptionsClient)
       .catch(Promise.TimeoutError, (error) => {
         if (this.builder) {
           error.sql = this.builder.sql;

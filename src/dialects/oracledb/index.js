@@ -83,156 +83,230 @@ Client_Oracledb.prototype.prepBindings = function(bindings) {
 Client_Oracledb.prototype.acquireRawConnection = function() {
   debugDialect('acquireRawConnection');
   const client = this;
-  const asyncConnection = new Promise(function(resolver, rejecter) {
-    // If external authentication dont have to worry about username/password and
-    // if not need to set the username and password
-    const oracleDbConfig = client.connectionSettings.externalAuth
-      ? { externalAuth: client.connectionSettings.externalAuth }
-      : {
-          user: client.connectionSettings.user,
-          password: client.connectionSettings.password,
-        };
+  const getAsyncConnection = function(driverOrPool) {
+    return new Promise(function(resolver, rejecter) {
+      // If external authentication dont have to worry about username/password and
+      // if not need to set the username and password
+      const oracleDbConfig = client.connectionSettings.externalAuth
+        ? { externalAuth: client.connectionSettings.externalAuth }
+        : {
+            user: client.connectionSettings.user,
+            password: client.connectionSettings.password,
+          };
 
-    // In the case of external authentication connection string will be given
-    oracleDbConfig.connectString =
-      client.connectionSettings.connectString ||
-      client.connectionSettings.host + '/' + client.connectionSettings.database;
-
-    if (client.connectionSettings.prefetchRowCount) {
-      oracleDbConfig.prefetchRows = client.connectionSettings.prefetchRowCount;
-    }
-
-    if (!_.isUndefined(client.connectionSettings.stmtCacheSize)) {
-      oracleDbConfig.stmtCacheSize = client.connectionSettings.stmtCacheSize;
-    }
-
-    client.driver.fetchAsString = client.fetchAsString;
-
-    client.driver.getConnection(oracleDbConfig, function(err, connection) {
-      if (err) {
-        return rejecter(err);
+      if (client.dialectPool && client.connectionSettings.client) {
+        oracleDbConfig.user = client.connectionSettings.client.user;
+        delete oracleDbConfig.password; // not required since we impersonate user
       }
-      connection.commitAsync = function() {
-        return new Promise((commitResolve, commitReject) => {
-          if (connection.isTransaction) {
-            return commitResolve();
-          }
-          this.commit(function(err) {
-            if (err) {
-              return commitReject(err);
-            }
-            commitResolve();
-          });
-        });
-      };
-      connection.rollbackAsync = function() {
-        return new Promise((rollbackResolve, rollbackReject) => {
-          this.rollback(function(err) {
-            if (err) {
-              return rollbackReject(err);
-            }
-            rollbackResolve();
-          });
-        });
-      };
-      const fetchAsync = function(sql, bindParams, options, cb) {
-        options = options || {};
-        options.outFormat = client.driver.OBJECT;
-        if (options.resultSet) {
-          connection.execute(sql, bindParams || [], options, function(
-            err,
-            result
-          ) {
-            if (err) {
-              return cb(err);
-            }
-            const fetchResult = { rows: [], resultSet: result.resultSet };
-            const numRows = 100;
-            const fetchRowsFromRS = function(connection, resultSet, numRows) {
-              resultSet.getRows(numRows, function(err, rows) {
-                if (err) {
-                  resultSet.close(function() {
-                    return cb(err);
-                  });
-                } else if (rows.length === 0) {
-                  return cb(null, fetchResult);
-                } else if (rows.length > 0) {
-                  if (rows.length === numRows) {
-                    fetchResult.rows = fetchResult.rows.concat(rows);
-                    fetchRowsFromRS(connection, resultSet, numRows);
-                  } else {
-                    fetchResult.rows = fetchResult.rows.concat(rows);
-                    return cb(null, fetchResult);
-                  }
-                }
-              });
-            };
-            fetchRowsFromRS(connection, result.resultSet, numRows);
-          });
-        } else {
-          connection.execute(sql, bindParams || [], options, cb);
+
+      // In the case of external authentication connection string will be given
+      oracleDbConfig.connectString =
+        client.connectionSettings.connectString ||
+        client.connectionSettings.host +
+          '/' +
+          client.connectionSettings.database;
+
+      if (client.connectionSettings.prefetchRowCount) {
+        oracleDbConfig.prefetchRows =
+          client.connectionSettings.prefetchRowCount;
+      }
+
+      if (!_.isUndefined(client.connectionSettings.stmtCacheSize)) {
+        oracleDbConfig.stmtCacheSize = client.connectionSettings.stmtCacheSize;
+      }
+
+      client.driver.fetchAsString = client.fetchAsString;
+
+      driverOrPool.getConnection(oracleDbConfig, function(err, connection) {
+        if (err) {
+          return rejecter(err);
         }
-      };
-      connection.executeAsync = function(sql, bindParams, options) {
-        // Read all lob
-        return new Promise(function(resultResolve, resultReject) {
-          fetchAsync(sql, bindParams, options, function(err, results) {
-            if (err) {
-              return resultReject(err);
+        connection.commitAsync = function() {
+          return new Promise((commitResolve, commitReject) => {
+            if (connection.isTransaction) {
+              return commitResolve();
             }
-            // Collect LOBs to read
-            const lobs = [];
-            if (results.rows) {
-              if (Array.isArray(results.rows)) {
-                for (let i = 0; i < results.rows.length; i++) {
-                  // Iterate through the rows
-                  const row = results.rows[i];
-                  for (const column in row) {
-                    if (row[column] instanceof stream.Readable) {
-                      lobs.push({ index: i, key: column, stream: row[column] });
-                    }
-                  }
-                }
+            this.commit(function(err) {
+              if (err) {
+                return commitReject(err);
               }
-            }
-            Promise.each(lobs, function(lob) {
-              return new Promise(function(lobResolve, lobReject) {
-                readStream(lob.stream, function(err, d) {
-                  if (err) {
-                    if (results.resultSet) {
-                      results.resultSet.close(function() {
-                        return lobReject(err);
-                      });
-                    }
-                    return lobReject(err);
-                  }
-                  results.rows[lob.index][lob.key] = d;
-                  lobResolve();
-                });
-              });
-            }).then(
-              function() {
-                if (results.resultSet) {
-                  results.resultSet.close(function(err) {
-                    if (err) {
-                      return resultReject(err);
-                    }
-                    return resultResolve(results);
-                  });
-                }
-                resultResolve(results);
-              },
-              function(err) {
-                resultReject(err);
-              }
-            );
+              commitResolve();
+            });
           });
-        });
-      };
-      resolver(connection);
+        };
+        connection.rollbackAsync = function() {
+          return new Promise((rollbackResolve, rollbackReject) => {
+            this.rollback(function(err) {
+              if (err) {
+                return rollbackReject(err);
+              }
+              rollbackResolve();
+            });
+          });
+        };
+        const fetchAsync = function(sql, bindParams, options, cb) {
+          options = options || {};
+          options.outFormat = client.driver.OBJECT;
+          if (options.resultSet) {
+            connection.execute(sql, bindParams || [], options, function(
+              err,
+              result
+            ) {
+              if (err) {
+                return cb(err);
+              }
+              const fetchResult = { rows: [], resultSet: result.resultSet };
+              const numRows = 100;
+              const fetchRowsFromRS = function(connection, resultSet, numRows) {
+                resultSet.getRows(numRows, function(err, rows) {
+                  if (err) {
+                    resultSet.close(function() {
+                      return cb(err);
+                    });
+                  } else if (rows.length === 0) {
+                    return cb(null, fetchResult);
+                  } else if (rows.length > 0) {
+                    if (rows.length === numRows) {
+                      fetchResult.rows = fetchResult.rows.concat(rows);
+                      fetchRowsFromRS(connection, resultSet, numRows);
+                    } else {
+                      fetchResult.rows = fetchResult.rows.concat(rows);
+                      return cb(null, fetchResult);
+                    }
+                  }
+                });
+              };
+              fetchRowsFromRS(connection, result.resultSet, numRows);
+            });
+          } else {
+            connection.execute(sql, bindParams || [], options, cb);
+          }
+        };
+        connection.executeAsync = function(sql, bindParams, options) {
+          // Read all lob
+          return new Promise(function(resultResolve, resultReject) {
+            fetchAsync(sql, bindParams, options, function(err, results) {
+              if (err) {
+                return resultReject(err);
+              }
+              // Collect LOBs to read
+              const lobs = [];
+              if (results.rows) {
+                if (Array.isArray(results.rows)) {
+                  for (let i = 0; i < results.rows.length; i++) {
+                    // Iterate through the rows
+                    const row = results.rows[i];
+                    for (const column in row) {
+                      if (row[column] instanceof stream.Readable) {
+                        lobs.push({
+                          index: i,
+                          key: column,
+                          stream: row[column],
+                        });
+                      }
+                    }
+                  }
+                }
+              }
+              Promise.each(lobs, function(lob) {
+                return new Promise(function(lobResolve, lobReject) {
+                  readStream(lob.stream, function(err, d) {
+                    if (err) {
+                      if (results.resultSet) {
+                        results.resultSet.close(function() {
+                          return lobReject(err);
+                        });
+                      }
+                      return lobReject(err);
+                    }
+                    results.rows[lob.index][lob.key] = d;
+                    lobResolve();
+                  });
+                });
+              }).then(
+                function() {
+                  if (results.resultSet) {
+                    results.resultSet.close(function(err) {
+                      if (err) {
+                        return resultReject(err);
+                      }
+                      return resultResolve(results);
+                    });
+                  }
+                  resultResolve(results);
+                },
+                function(err) {
+                  resultReject(err);
+                }
+              );
+            });
+          });
+        };
+        connection.madeWithBuilderOptionClient = client.connectionSettings
+          ? client.connectionSettings.client
+          : null;
+        connection.client = client;
+
+        client.logger.warn('resolved connection');
+        resolver(connection);
+      });
     });
-  });
-  return asyncConnection;
+  };
+  // Yield:
+  // 1020 passing
+  // 3 pending
+  //return Promise.resolve(asyncConnection);
+  //
+  // Yield:
+  // 867 passing (25s)
+  // 1 pending
+  // 1 failing
+  // 1) oracle | oracledb
+  //      knex.migrate
+  //        knex.migrate.latest
+  //          should remove the record in the lock table once finished:
+  //    AssertionError: expected 1 to be falsy
+  //     at /knex/test/integration/migrate/index.js:143:48
+  // From previous event:
+  //     at Builder.Target.then (lib/interface.js:37:24)
+  //     at Context.<anonymous> (test/integration/migrate/index.js:141:12)
+  return Promise.resolve()
+    .then(() => {
+      if (client.dialectPool) {
+        client.logger.warn('using memorized oracle pool');
+        return client.dialectPool;
+      }
+      if (client.mustInitDialectPool) {
+        client.logger.warn('using oracle pool');
+        return client.driver.createPool(client.dialectPoolOptions);
+      }
+      client.logger.warn('using driver (no oracle pool)');
+      return client.driver;
+    })
+    .then((driverOrPool) => {
+      if (client.mustInitDialectPool) {
+        client.mustInitDialectPool = false;
+        client.dialectPool = driverOrPool;
+        client.logger.warn('completed dialectPool init ');
+      }
+      return getAsyncConnection(driverOrPool);
+    });
+  //
+  // Yield:
+  // 1020 passing (38s)
+  // 3 pending
+  //return asyncConnection;
+  //
+  // Yield:
+  // 867 passing (22s)
+  // 1 pending
+  // 1 failing
+  // 1) oracle | oracledb
+  //      knex.migrate
+  //        knex.migrate.latest
+  //          should remove the record in the lock table once finished:
+  //    AssertionError: expected 1 to be falsy
+  //return Promise.resolve().then(() => debugDialect('stage1')).then(() => asyncConnection);
 };
 
 // Used to explicitly close a connection, called internally by the pool
@@ -448,6 +522,10 @@ Client_Oracledb.prototype._dialectDestroyPool = function(
   done
 ) {
   debugDialect('_dialectDestroyPool');
+  if (!dialectPool) {
+    debugDialect('No pool to destroy!');
+    return Promise.resolve();
+  }
 
   return dialectPool
     .close()
@@ -466,12 +544,39 @@ Client_Oracledb.prototype._dialectReleaseConnectionPool = function(connection) {
   return new Promise.resolve(null);
 };
 
+Client_Oracledb.prototype.validateConnection = function(connection) {
+  const client = connection.client;
+  if (client.dialectPool) {
+    return this._dialectValidateConnectionPool(connection, client);
+  }
+  return true;
+};
+
 // Required for case using Oracle's poolling instead of tarn one
 // See delegatedToDriversDialect in pool config
 Client_Oracledb.prototype._dialectValidateConnectionPool = function(
-  connection
+  connection,
+  client
 ) {
-  return new Promise.resolve(null);
+  //const client = this;
+  const oldClientUser =
+    connection && connection.madeWithBuilderOptionClient
+      ? connection.madeWithBuilderOptionClient.user
+      : null;
+  const newClientUser =
+    client && client.connectionSettings && client.connectionSettings.client
+      ? client.connectionSettings.client.user
+      : null;
+  if (
+    oldClientUser === newClientUser ||
+    (_.isNull(oldClientUser) && _.isNull(newClientUser))
+  ) {
+    return true;
+  }
+  client.log.warn(
+    `told tarn that this connection is not valid because it's not for the user needed (need ${newClientUser} actually have ${oldClientUser})`
+  );
+  return false;
 };
 
 class Oracledb_Formatter extends Oracle_Formatter {
