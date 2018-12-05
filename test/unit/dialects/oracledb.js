@@ -181,6 +181,41 @@ describe('OracleDb mix of proxy/non-proxy request', function() {
   });
 });
 
+describe('OracleDb request for transactions', function() {
+  var knexInstance;
+
+  before(function() {
+    knexInstance = knex(configDialectPool4Proxy);
+  });
+
+  it(`Generate transaction`, function() {
+    return knexInstance.transaction(function(trx) { 
+      return trx('DUAL')
+      .select('*')
+      .then(function(resp){
+        expect(resp).to.have.lengthOf(1);
+      })
+    })
+});
+
+  it(`Generate transaction with impersonated in options with fail result`, function() {
+      return knexInstance.transaction(function(trx) { 
+        return trx('DUAL')
+        .select(trx.raw('USER'))
+        .options({ client: { user: config.oracledb.connection.otherenduser } })
+        .then(function(resp){
+          expect(resp).to.have.lengthOf(1);
+          expect(resp[0]['USER']).to.not.equal(
+            config.oracledb.connection.otherenduser.toUpperCase()
+          );
+        })
+      });        
+  });   
+  after(function() {
+    knexInstance.destroy();
+  });
+});
+
 describe('OracleDb parameters', function() {
   describe('with fetchAsString parameter', function() {
     var knexClient;
