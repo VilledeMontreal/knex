@@ -98,7 +98,7 @@
     "stress:init": "docker-compose -f scripts/stress-test/docker-compose.yml up --no-start && docker-compose -f scripts/stress-test/docker-compose.yml start",
     "stress:test": "node scripts/stress-test/knex-stress-test.js |  grep -A 5 -B 60 -- '- STATS '",
     "stress:destroy": "docker-compose -f scripts/stress-test/docker-compose.yml stop",
-    "postinstall": "npm run build"
+    "prepare": "npm run build"
   },
   "bin": {
     "knex": "./bin/cli.js"
