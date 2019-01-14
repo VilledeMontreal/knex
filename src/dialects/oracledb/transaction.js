@@ -44,10 +44,13 @@ export default class Oracle_Transaction extends Transaction {
     return this.query(conn, `SAVEPOINT ${this.txid}`);
   }
 
-  acquireConnection(config) {
+  acquireConnection(config, clientOptions) {
     const t = this;
+
+    const options = clientOptions ? clientOptions.client : null;
+
     return Promise.try(function() {
-      return t.client.acquireConnection().then(function(cnx) {
+      return t.client.acquireConnection(options).then(function(cnx) {
         cnx.__knexTxId = t.txid;
         cnx.isTransaction = true;
         return cnx;
