@@ -189,28 +189,45 @@ describe('OracleDb request for transactions', function() {
   });
 
   it(`Generate transaction`, function() {
-    return knexInstance.transaction(function(trx) { 
+    return knexInstance.transaction(function(trx) {
       return trx('DUAL')
-      .select('*')
-      .then(function(resp){
-        expect(resp).to.have.lengthOf(1);
-      })
-    })
-});
+        .select('*')
+        .then(function(resp) {
+          expect(resp).to.have.lengthOf(1);
+        });
+    });
+  });
 
-  it(`Generate transaction with impersonated in options with fail result`, function() {
-      return knexInstance.transaction(function(trx) { 
-        return trx('DUAL')
+  it(`Generate transaction with proxy user in options with fail result`, function() {
+    return knexInstance.transaction(function(trx) {
+      return trx('DUAL')
         .select(trx.raw('USER'))
         .options({ client: { user: config.oracledb.connection.otherenduser } })
-        .then(function(resp){
+        .then(function(resp) {
           expect(resp).to.have.lengthOf(1);
           expect(resp[0]['USER']).to.not.equal(
             config.oracledb.connection.otherenduser.toUpperCase()
           );
-        })
-      });        
-  });   
+        });
+    });
+  });
+
+  it(`Generate transaction with proxy user in transactions`, function() {
+    return knexInstance.transaction(
+      function(trx) {
+        return trx('DUAL')
+          .select(trx.raw('USER'))
+          .then(function(resp) {
+            expect(resp).to.have.lengthOf(1);
+            expect(resp[0]['USER']).to.be.equal(
+              config.oracledb.connection.otherenduser.toUpperCase()
+            );
+          });
+      },
+      { client: { user: config.oracledb.connection.otherenduser } }
+    );
+  });
+
   after(function() {
     knexInstance.destroy();
   });
