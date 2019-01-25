@@ -11,23 +11,33 @@ var MSSQL_Client = require('../../../lib/dialects/mssql');
 
 // use driverName as key
 var clients = {
-  mysql: new MySQL_Client({}),
-  pg: new PG_Client({}),
-  'pg-redshift': new Redshift_Client({}),
-  oracledb: new Oracledb_Client({}),
-  sqlite3: new SQLite3_Client({}),
-  mssql: new MSSQL_Client({}),
+  mysql: new MySQL_Client({ client: 'mysql' }),
+  pg: new PG_Client({ client: 'pg' }),
+  'pg-redshift': new Redshift_Client({ client: 'redshift' }),
+  oracledb: new Oracledb_Client({ client: 'oracledb' }),
+  sqlite3: new SQLite3_Client({ client: 'sqlite3' }),
+  mssql: new MSSQL_Client({ client: 'mssql' }),
 };
 
 var useNullAsDefaultConfig = { useNullAsDefault: true };
 // use driverName as key
 var clientsWithNullAsDefault = {
-  mysql: new MySQL_Client(useNullAsDefaultConfig),
-  pg: new PG_Client(useNullAsDefaultConfig),
-  'pg-redshift': new Redshift_Client(useNullAsDefaultConfig),
-  oracledb: new Oracledb_Client(useNullAsDefaultConfig),
-  sqlite3: new SQLite3_Client(useNullAsDefaultConfig),
-  mssql: new MSSQL_Client(useNullAsDefaultConfig),
+  mysql: new MySQL_Client(
+    Object.assign({ client: 'mysql' }, useNullAsDefaultConfig)
+  ),
+  pg: new PG_Client(Object.assign({ client: 'pg' }, useNullAsDefaultConfig)),
+  'pg-redshift': new Redshift_Client(
+    Object.assign({ client: 'redshift' }, useNullAsDefaultConfig)
+  ),
+  oracledb: new Oracledb_Client(
+    Object.assign({ client: 'oracledb' }, useNullAsDefaultConfig)
+  ),
+  sqlite3: new SQLite3_Client(
+    Object.assign({ client: 'sqlite3' }, useNullAsDefaultConfig)
+  ),
+  mssql: new MSSQL_Client(
+    Object.assign({ client: 'mssql' }, useNullAsDefaultConfig)
+  ),
 };
 
 // note: as a workaround, we are using postgres here, since that's using the default " field wrapping
@@ -110,12 +120,22 @@ describe('Custom identifier wrapping', function() {
 
   // use driverName as key
   var clientsWithCustomIdentifierWrapper = {
-    mysql: new MySQL_Client(customWrapperConfig),
-    pg: new PG_Client(customWrapperConfig),
-    'pg-redshift': new Redshift_Client(customWrapperConfig),
-    oracledb: new Oracledb_Client(customWrapperConfig),
-    sqlite3: new SQLite3_Client(customWrapperConfig),
-    mssql: new MSSQL_Client(customWrapperConfig),
+    mysql: new MySQL_Client(
+      Object.assign({ client: 'mysql' }, customWrapperConfig)
+    ),
+    pg: new PG_Client(Object.assign({ client: 'pg' }, customWrapperConfig)),
+    'pg-redshift': new Redshift_Client(
+      Object.assign({ client: 'redshift' }, customWrapperConfig)
+    ),
+    oracledb: new Oracledb_Client(
+      Object.assign({ client: 'oracledb' }, customWrapperConfig)
+    ),
+    sqlite3: new SQLite3_Client(
+      Object.assign({ client: 'sqlite3' }, customWrapperConfig)
+    ),
+    mssql: new MSSQL_Client(
+      Object.assign({ client: 'mssql' }, customWrapperConfig)
+    ),
   };
 
   it('should use custom wrapper', () => {
@@ -766,6 +786,22 @@ describe('QueryBuilder', function() {
         pg: 'select * from "users" where "id" = 1',
         'pg-redshift': 'select * from "users" where "id" = 1',
         mssql: 'select * from [users] where [id] = 1',
+      }
+    );
+  });
+
+  it('whereColumn', () => {
+    testsql(
+      qb()
+        .select('*')
+        .from('users')
+        .whereColumn('users.id', '=', 'users.otherId'),
+      {
+        mysql: 'select * from `users` where `users`.`id` = `users`.`otherId`',
+        pg: 'select * from "users" where "users"."id" = "users"."otherId"',
+        'pg-redshift':
+          'select * from "users" where "users"."id" = "users"."otherId"',
+        mssql: 'select * from [users] where [users].[id] = [users].[otherId]',
       }
     );
   });
@@ -2415,6 +2451,60 @@ describe('QueryBuilder', function() {
         .from('users')
         .orderBy('email')
         .orderBy('age', 'desc'),
+      {
+        mysql: {
+          sql: 'select * from `users` order by `email` asc, `age` desc',
+          bindings: [],
+        },
+        mssql: {
+          sql: 'select * from [users] order by [email] asc, [age] desc',
+          bindings: [],
+        },
+        pg: {
+          sql: 'select * from "users" order by "email" asc, "age" desc',
+          bindings: [],
+        },
+        'pg-redshift': {
+          sql: 'select * from "users" order by "email" asc, "age" desc',
+          bindings: [],
+        },
+      }
+    );
+  });
+
+  it('order by array', function() {
+    testsql(
+      qb()
+        .select('*')
+        .from('users')
+        .orderBy(['email', { column: 'age', order: 'desc' }]),
+      {
+        mysql: {
+          sql: 'select * from `users` order by `email` asc, `age` desc',
+          bindings: [],
+        },
+        mssql: {
+          sql: 'select * from [users] order by [email] asc, [age] desc',
+          bindings: [],
+        },
+        pg: {
+          sql: 'select * from "users" order by "email" asc, "age" desc',
+          bindings: [],
+        },
+        'pg-redshift': {
+          sql: 'select * from "users" order by "email" asc, "age" desc',
+          bindings: [],
+        },
+      }
+    );
+  });
+
+  it('order by array without order', function() {
+    testsql(
+      qb()
+        .select('*')
+        .from('users')
+        .orderBy([{ column: 'email' }, { column: 'age', order: 'desc' }]),
       {
         mysql: {
           sql: 'select * from `users` order by `email` asc, `age` desc',
@@ -5667,21 +5757,277 @@ describe('QueryBuilder', function() {
         .increment('balance', 10),
       {
         mysql: {
-          sql: 'update `users` set `balance` = `balance` + 10 where `id` = ?',
-          bindings: [1],
+          sql: 'update `users` set `balance` = `balance` + ? where `id` = ?',
+          bindings: [10, 1],
         },
         mssql: {
           sql:
-            'update [users] set [balance] = [balance] + 10 where [id] = ?;select @@rowcount',
-          bindings: [1],
+            'update [users] set [balance] = [balance] + ? where [id] = ?;select @@rowcount',
+          bindings: [10, 1],
         },
         pg: {
-          sql: 'update "users" set "balance" = "balance" + 10 where "id" = ?',
-          bindings: [1],
+          sql: 'update "users" set "balance" = "balance" + ? where "id" = ?',
+          bindings: [10, 1],
         },
         'pg-redshift': {
-          sql: 'update "users" set "balance" = "balance" + 10 where "id" = ?',
-          bindings: [1],
+          sql: 'update "users" set "balance" = "balance" + ? where "id" = ?',
+          bindings: [10, 1],
+        },
+      }
+    );
+  });
+
+  it('Calling increment multiple times on same column overwrites the previous value', () => {
+    testsql(
+      qb()
+        .into('users')
+        .where('id', '=', 1)
+        .increment('balance', 10)
+        .increment('balance', 20),
+      {
+        pg: {
+          sql: 'update "users" set "balance" = "balance" + ? where "id" = ?',
+          bindings: [20, 1],
+        },
+        mysql: {
+          sql: 'update `users` set `balance` = `balance` + ? where `id` = ?',
+          bindings: [20, 1],
+        },
+        mssql: {
+          sql:
+            'update [users] set [balance] = [balance] + ? where [id] = ?;select @@rowcount',
+          bindings: [20, 1],
+        },
+        'pg-redshift': {
+          sql: 'update "users" set "balance" = "balance" + ? where "id" = ?',
+          bindings: [20, 1],
+        },
+      }
+    );
+  });
+
+  it('Calling increment and then decrement will overwrite the previous value', () => {
+    testsql(
+      qb()
+        .into('users')
+        .where('id', '=', 1)
+        .increment('balance', 10)
+        .decrement('balance', 90),
+      {
+        pg: {
+          sql: 'update "users" set "balance" = "balance" - ? where "id" = ?',
+          bindings: [90, 1],
+        },
+        mysql: {
+          sql: 'update `users` set `balance` = `balance` - ? where `id` = ?',
+          bindings: [90, 1],
+        },
+        mssql: {
+          sql:
+            'update [users] set [balance] = [balance] - ? where [id] = ?;select @@rowcount',
+          bindings: [90, 1],
+        },
+        'pg-redshift': {
+          sql: 'update "users" set "balance" = "balance" - ? where "id" = ?',
+          bindings: [90, 1],
+        },
+      }
+    );
+  });
+
+  it('Calling decrement multiple times on same column overwrites the previous value', () => {
+    testsql(
+      qb()
+        .into('users')
+        .where('id', '=', 1)
+        .decrement('balance', 10)
+        .decrement('balance', 20),
+      {
+        pg: {
+          sql: 'update "users" set "balance" = "balance" - ? where "id" = ?',
+          bindings: [20, 1],
+        },
+        mysql: {
+          sql: 'update `users` set `balance` = `balance` - ? where `id` = ?',
+          bindings: [20, 1],
+        },
+        mssql: {
+          sql:
+            'update [users] set [balance] = [balance] - ? where [id] = ?;select @@rowcount',
+          bindings: [20, 1],
+        },
+        'pg-redshift': {
+          sql: 'update "users" set "balance" = "balance" - ? where "id" = ?',
+          bindings: [20, 1],
+        },
+      }
+    );
+  });
+
+  it('Calling decrement and then increment will overwrite the previous value', () => {
+    testsql(
+      qb()
+        .into('users')
+        .where('id', '=', 1)
+        .decrement('balance', 10)
+        .increment('balance', 90),
+      {
+        pg: {
+          sql: 'update "users" set "balance" = "balance" + ? where "id" = ?',
+          bindings: [90, 1],
+        },
+        mysql: {
+          sql: 'update `users` set `balance` = `balance` + ? where `id` = ?',
+          bindings: [90, 1],
+        },
+        mssql: {
+          sql:
+            'update [users] set [balance] = [balance] + ? where [id] = ?;select @@rowcount',
+          bindings: [90, 1],
+        },
+        'pg-redshift': {
+          sql: 'update "users" set "balance" = "balance" + ? where "id" = ?',
+          bindings: [90, 1],
+        },
+      }
+    );
+  });
+
+  it('Can chain increment / decrement with .update in same build-chain', () => {
+    testsql(
+      qb()
+        .into('users')
+        .where('id', '=', 1)
+        .update({
+          email: 'foo@bar.com',
+        })
+        .increment('balance', 10)
+        .decrement('subbalance', 100),
+      {
+        pg: {
+          sql:
+            'update "users" set "email" = ?, "balance" = "balance" + ?, "subbalance" = "subbalance" - ? where "id" = ?',
+          bindings: ['foo@bar.com', 10, 100, 1],
+        },
+        mysql: {
+          sql:
+            'update `users` set `email` = ?, `balance` = `balance` + ?, `subbalance` = `subbalance` - ? where `id` = ?',
+          bindings: ['foo@bar.com', 10, 100, 1],
+        },
+        mssql: {
+          sql:
+            'update [users] set [email] = ?, [balance] = [balance] + ?, [subbalance] = [subbalance] - ? where [id] = ?;select @@rowcount',
+          bindings: ['foo@bar.com', 10, 100, 1],
+        },
+        'pg-redshift': {
+          sql:
+            'update "users" set "email" = ?, "balance" = "balance" + ?, "subbalance" = "subbalance" - ? where "id" = ?',
+          bindings: ['foo@bar.com', 10, 100, 1],
+        },
+      }
+    );
+  });
+
+  it('Can chain increment / decrement with .update in same build-chain and ignores increment/decrement if column is also supplied in .update', () => {
+    testsql(
+      qb()
+        .into('users')
+        .where('id', '=', 1)
+        .update({
+          balance: 500,
+        })
+        .increment('balance', 10)
+        .decrement('balance', 100),
+      {
+        pg: {
+          sql: 'update "users" set "balance" = ? where "id" = ?',
+          bindings: [500, 1],
+        },
+        mysql: {
+          sql: 'update `users` set `balance` = ? where `id` = ?',
+          bindings: [500, 1],
+        },
+        mssql: {
+          sql:
+            'update [users] set [balance] = ? where [id] = ?;select @@rowcount',
+          bindings: [500, 1],
+        },
+        'pg-redshift': {
+          sql: 'update "users" set "balance" = ? where "id" = ?',
+          bindings: [500, 1],
+        },
+      }
+    );
+  });
+
+  it('Can use object syntax for increment/decrement', () => {
+    testsql(
+      qb()
+        .into('users')
+        .where('id', '=', 1)
+        .increment({
+          balance: 10,
+          times: 1,
+        })
+        .decrement({
+          value: 50,
+          subvalue: 30,
+        }),
+      {
+        pg: {
+          sql:
+            'update "users" set "balance" = "balance" + ?, "times" = "times" + ?, "value" = "value" - ?, "subvalue" = "subvalue" - ? where "id" = ?',
+          bindings: [10, 1, 50, 30, 1],
+        },
+        mysql: {
+          sql:
+            'update `users` set `balance` = `balance` + ?, `times` = `times` + ?, `value` = `value` - ?, `subvalue` = `subvalue` - ? where `id` = ?',
+          bindings: [10, 1, 50, 30, 1],
+        },
+        mssql: {
+          sql:
+            'update [users] set [balance] = [balance] + ?, [times] = [times] + ?, [value] = [value] - ?, [subvalue] = [subvalue] - ? where [id] = ?;select @@rowcount',
+          bindings: [10, 1, 50, 30, 1],
+        },
+        'pg-redshift': {
+          sql:
+            'update "users" set "balance" = "balance" + ?, "times" = "times" + ?, "value" = "value" - ?, "subvalue" = "subvalue" - ? where "id" = ?',
+          bindings: [10, 1, 50, 30, 1],
+        },
+      }
+    );
+  });
+
+  it('Can clear increment/decrement calls via .clearCounter()', () => {
+    testsql(
+      qb()
+        .into('users')
+        .where('id', '=', 1)
+        .update({ email: 'foo@bar.com' })
+        .increment({
+          balance: 10,
+        })
+        .decrement({
+          value: 50,
+        })
+        .clearCounters(),
+      {
+        pg: {
+          sql: 'update "users" set "email" = ? where "id" = ?',
+          bindings: ['foo@bar.com', 1],
+        },
+        mysql: {
+          sql: 'update `users` set `email` = ? where `id` = ?',
+          bindings: ['foo@bar.com', 1],
+        },
+        mssql: {
+          sql:
+            'update [users] set [email] = ? where [id] = ?;select @@rowcount',
+          bindings: ['foo@bar.com', 1],
+        },
+        'pg-redshift': {
+          sql: 'update "users" set "email" = ? where "id" = ?',
+          bindings: ['foo@bar.com', 1],
         },
       }
     );
@@ -5695,21 +6041,21 @@ describe('QueryBuilder', function() {
         .increment('balance', 1.23),
       {
         mysql: {
-          sql: 'update `users` set `balance` = `balance` + 1.23 where `id` = ?',
-          bindings: [1],
+          sql: 'update `users` set `balance` = `balance` + ? where `id` = ?',
+          bindings: [1.23, 1],
         },
         mssql: {
           sql:
-            'update [users] set [balance] = [balance] + 1.23 where [id] = ?;select @@rowcount',
-          bindings: [1],
+            'update [users] set [balance] = [balance] + ? where [id] = ?;select @@rowcount',
+          bindings: [1.23, 1],
         },
         pg: {
-          sql: 'update "users" set "balance" = "balance" + 1.23 where "id" = ?',
-          bindings: [1],
+          sql: 'update "users" set "balance" = "balance" + ? where "id" = ?',
+          bindings: [1.23, 1],
         },
         'pg-redshift': {
-          sql: 'update "users" set "balance" = "balance" + 1.23 where "id" = ?',
-          bindings: [1],
+          sql: 'update "users" set "balance" = "balance" + ? where "id" = ?',
+          bindings: [1.23, 1],
         },
       }
     );
@@ -5723,21 +6069,21 @@ describe('QueryBuilder', function() {
         .decrement('balance', 10),
       {
         mysql: {
-          sql: 'update `users` set `balance` = `balance` - 10 where `id` = ?',
-          bindings: [1],
+          sql: 'update `users` set `balance` = `balance` - ? where `id` = ?',
+          bindings: [10, 1],
         },
         mssql: {
           sql:
-            'update [users] set [balance] = [balance] - 10 where [id] = ?;select @@rowcount',
-          bindings: [1],
+            'update [users] set [balance] = [balance] - ? where [id] = ?;select @@rowcount',
+          bindings: [10, 1],
         },
         pg: {
-          sql: 'update "users" set "balance" = "balance" - 10 where "id" = ?',
-          bindings: [1],
+          sql: 'update "users" set "balance" = "balance" - ? where "id" = ?',
+          bindings: [10, 1],
         },
         'pg-redshift': {
-          sql: 'update "users" set "balance" = "balance" - 10 where "id" = ?',
-          bindings: [1],
+          sql: 'update "users" set "balance" = "balance" - ? where "id" = ?',
+          bindings: [10, 1],
         },
       }
     );
@@ -5751,21 +6097,21 @@ describe('QueryBuilder', function() {
         .decrement('balance', 1.23),
       {
         mysql: {
-          sql: 'update `users` set `balance` = `balance` - 1.23 where `id` = ?',
-          bindings: [1],
+          sql: 'update `users` set `balance` = `balance` - ? where `id` = ?',
+          bindings: [1.23, 1],
         },
         mssql: {
           sql:
-            'update [users] set [balance] = [balance] - 1.23 where [id] = ?;select @@rowcount',
-          bindings: [1],
+            'update [users] set [balance] = [balance] - ? where [id] = ?;select @@rowcount',
+          bindings: [1.23, 1],
         },
         pg: {
-          sql: 'update "users" set "balance" = "balance" - 1.23 where "id" = ?',
-          bindings: [1],
+          sql: 'update "users" set "balance" = "balance" - ? where "id" = ?',
+          bindings: [1.23, 1],
         },
         'pg-redshift': {
-          sql: 'update "users" set "balance" = "balance" - 1.23 where "id" = ?',
-          bindings: [1],
+          sql: 'update "users" set "balance" = "balance" - ? where "id" = ?',
+          bindings: [1.23, 1],
         },
       }
     );
@@ -5996,6 +6342,34 @@ describe('QueryBuilder', function() {
           bindings: ['baz'],
         },
         pg: {
+          sql: 'select * from "foo" where "bar" = ? for update',
+          bindings: ['baz'],
+        },
+      }
+    );
+  });
+
+  it('lock only some tables for update', function() {
+    testsql(
+      qb()
+        .select('*')
+        .from('foo')
+        .where('bar', '=', 'baz')
+        .forUpdate('lo', 'rem'),
+      {
+        mysql: {
+          sql: 'select * from `foo` where `bar` = ? for update',
+          bindings: ['baz'],
+        },
+        pg: {
+          sql: 'select * from "foo" where "bar" = ? for update of "lo", "rem"',
+          bindings: ['baz'],
+        },
+        mssql: {
+          sql: 'select * from [foo] with (UPDLOCK) where [bar] = ?',
+          bindings: ['baz'],
+        },
+        oracledb: {
           sql: 'select * from "foo" where "bar" = ? for update',
           bindings: ['baz'],
         },
@@ -6701,17 +7075,45 @@ describe('QueryBuilder', function() {
         }),
       {
         mysql: {
-          sql: 'select * from `accounts` inner join `table1` using `id`',
+          sql: 'select * from `accounts` inner join `table1` using (`id`)',
         },
         mssql: {
           //sql: 'select * from [accounts] inner join [table1] on [accounts].[id] = [table1].[id]'
-          sql: 'select * from [accounts] inner join [table1] using [id]',
+          sql: 'select * from [accounts] inner join [table1] using ([id])',
         },
         pg: {
-          sql: 'select * from "accounts" inner join "table1" using "id"',
+          sql: 'select * from "accounts" inner join "table1" using ("id")',
         },
         'pg-redshift': {
-          sql: 'select * from "accounts" inner join "table1" using "id"',
+          sql: 'select * from "accounts" inner join "table1" using ("id")',
+        },
+      }
+    );
+
+    testsql(
+      qb()
+        .select('*')
+        .from('accounts')
+        .innerJoin('table1', function() {
+          this.using(['id', 'test']);
+        }),
+      {
+        mysql: {
+          sql:
+            'select * from `accounts` inner join `table1` using (`id`, `test`)',
+        },
+        mssql: {
+          //sql: 'select * from [accounts] inner join [table1] on [accounts].[id] = [table1].[id]'
+          sql:
+            'select * from [accounts] inner join [table1] using ([id], [test])',
+        },
+        pg: {
+          sql:
+            'select * from "accounts" inner join "table1" using ("id", "test")',
+        },
+        'pg-redshift': {
+          sql:
+            'select * from "accounts" inner join "table1" using ("id", "test")',
         },
       }
     );
@@ -7960,6 +8362,44 @@ describe('QueryBuilder', function() {
     );
   });
 
+  it("nested and chained wrapped 'withRecursive' clause", function() {
+    testsql(
+      qb()
+        .withRecursive('firstWithClause', function() {
+          this.withRecursive('firstWithSubClause', function() {
+            this.select('foo')
+              .as('foz')
+              .from('users');
+          })
+            .select('*')
+            .from('firstWithSubClause');
+        })
+        .withRecursive('secondWithClause', function() {
+          this.withRecursive('secondWithSubClause', function() {
+            this.select('bar')
+              .as('baz')
+              .from('users');
+          })
+            .select('*')
+            .from('secondWithSubClause');
+        })
+        .select('*')
+        .from('secondWithClause'),
+      {
+        mssql:
+          'with recursive [firstWithClause] as (with recursive [firstWithSubClause] as ((select [foo] from [users]) as [foz]) select * from [firstWithSubClause]), [secondWithClause] as (with recursive [secondWithSubClause] as ((select [bar] from [users]) as [baz]) select * from [secondWithSubClause]) select * from [secondWithClause]',
+        sqlite3:
+          'with recursive `firstWithClause` as (with recursive `firstWithSubClause` as ((select `foo` from `users`) as `foz`) select * from `firstWithSubClause`), `secondWithClause` as (with recursive `secondWithSubClause` as ((select `bar` from `users`) as `baz`) select * from `secondWithSubClause`) select * from `secondWithClause`',
+        pg:
+          'with recursive "firstWithClause" as (with recursive "firstWithSubClause" as ((select "foo" from "users") as "foz") select * from "firstWithSubClause"), "secondWithClause" as (with recursive "secondWithSubClause" as ((select "bar" from "users") as "baz") select * from "secondWithSubClause") select * from "secondWithClause"',
+        'pg-redshift':
+          'with recursive "firstWithClause" as (with recursive "firstWithSubClause" as ((select "foo" from "users") as "foz") select * from "firstWithSubClause"), "secondWithClause" as (with recursive "secondWithSubClause" as ((select "bar" from "users") as "baz") select * from "secondWithSubClause") select * from "secondWithClause"',
+        oracledb:
+          'with recursive "firstWithClause" as (with recursive "firstWithSubClause" as ((select "foo" from "users") "foz") select * from "firstWithSubClause"), "secondWithClause" as (with recursive "secondWithSubClause" as ((select "bar" from "users") "baz") select * from "secondWithSubClause") select * from "secondWithClause"',
+      }
+    );
+  });
+
   describe('#2263, update / delete queries in with syntax', () => {
     it('with update query passed as raw', () => {
       testquery(
@@ -8264,6 +8704,114 @@ describe('QueryBuilder', function() {
           'select "departments".*, "trainee_cnts"."count" as "trainee_cnt" from "foo"."departments" inner join (select "department_id", count(*) from "foo"."trainees" group by "department_id") as "trainee_cnts" on "trainee_cnts"."department_id" = "departments"."id"',
         oracledb:
           'select "departments".*, "trainee_cnts"."count" "trainee_cnt" from "foo"."departments" inner join (select "department_id", count(*) from "foo"."trainees" group by "department_id") "trainee_cnts" on "trainee_cnts"."department_id" = "departments"."id"',
+      }
+    );
+  });
+
+  it('join with onVal andOnVal orOnVal', () => {
+    testsql(
+      qb()
+        .select({
+          id: 'p.ID',
+          status: 'p.post_status',
+          name: 'p.post_title',
+          // type: 'terms.name',
+          price: 'price.meta_value',
+          createdAt: 'p.post_date_gmt',
+          updatedAt: 'p.post_modified_gmt',
+        })
+        .from({ p: 'wp_posts' })
+        .leftJoin({ price: 'wp_postmeta' }, function() {
+          this.on('p.id', '=', 'price.post_id')
+            .onVal(function() {
+              this.onVal('price.meta_key', '_regular_price').andOnVal(
+                'price_meta_key',
+                '_regular_price'
+              );
+            })
+            .orOnVal(function() {
+              this.onVal('price_meta.key', '_regular_price');
+            });
+        }),
+      {
+        pg: {
+          sql:
+            'select "p"."ID" as "id", "p"."post_status" as "status", "p"."post_title" as "name", "price"."meta_value" as "price", "p"."post_date_gmt" as "createdAt", "p"."post_modified_gmt" as "updatedAt" from "wp_posts" as "p" left join "wp_postmeta" as "price" on "p"."id" = "price"."post_id" and ("price"."meta_key" = ? and "price_meta_key" = ?) or ("price_meta"."key" = ?)',
+          bindings: ['_regular_price', '_regular_price', '_regular_price'],
+        },
+        mysql: {
+          sql:
+            'select `p`.`ID` as `id`, `p`.`post_status` as `status`, `p`.`post_title` as `name`, `price`.`meta_value` as `price`, `p`.`post_date_gmt` as `createdAt`, `p`.`post_modified_gmt` as `updatedAt` from `wp_posts` as `p` left join `wp_postmeta` as `price` on `p`.`id` = `price`.`post_id` and (`price`.`meta_key` = ? and `price_meta_key` = ?) or (`price_meta`.`key` = ?)',
+          bindings: ['_regular_price', '_regular_price', '_regular_price'],
+        },
+        mssql: {
+          sql:
+            'select [p].[ID] as [id], [p].[post_status] as [status], [p].[post_title] as [name], [price].[meta_value] as [price], [p].[post_date_gmt] as [createdAt], [p].[post_modified_gmt] as [updatedAt] from [wp_posts] as [p] left join [wp_postmeta] as [price] on [p].[id] = [price].[post_id] and ([price].[meta_key] = ? and [price_meta_key] = ?) or ([price_meta].[key] = ?)',
+          bindings: ['_regular_price', '_regular_price', '_regular_price'],
+        },
+        'pg-redshift': {
+          sql:
+            'select "p"."ID" as "id", "p"."post_status" as "status", "p"."post_title" as "name", "price"."meta_value" as "price", "p"."post_date_gmt" as "createdAt", "p"."post_modified_gmt" as "updatedAt" from "wp_posts" as "p" left join "wp_postmeta" as "price" on "p"."id" = "price"."post_id" and ("price"."meta_key" = ? and "price_meta_key" = ?) or ("price_meta"."key" = ?)',
+          bindings: ['_regular_price', '_regular_price', '_regular_price'],
+        },
+        oracledb: {
+          sql:
+            'select "p"."ID" "id", "p"."post_status" "status", "p"."post_title" "name", "price"."meta_value" "price", "p"."post_date_gmt" "createdAt", "p"."post_modified_gmt" "updatedAt" from "wp_posts" "p" left join "wp_postmeta" "price" on "p"."id" = "price"."post_id" and ("price"."meta_key" = ? and "price_meta_key" = ?) or ("price_meta"."key" = ?)',
+          bindings: ['_regular_price', '_regular_price', '_regular_price'],
+        },
+      }
+    );
+
+    testsql(
+      qb()
+        .select({
+          id: 'p.ID',
+          status: 'p.post_status',
+          name: 'p.post_title',
+          // type: 'terms.name',
+          price: 'price.meta_value',
+          createdAt: 'p.post_date_gmt',
+          updatedAt: 'p.post_modified_gmt',
+        })
+        .from({ p: 'wp_posts' })
+        .leftJoin({ price: 'wp_postmeta' }, (builder) => {
+          builder
+            .onVal((q) => {
+              q.onVal('price.meta_key', '_regular_price').andOnVal(
+                'price_meta_key',
+                '_regular_price'
+              );
+            })
+            .orOnVal((q) => {
+              q.onVal('price_meta.key', '_regular_price');
+            });
+        }),
+      {
+        pg: {
+          sql:
+            'select "p"."ID" as "id", "p"."post_status" as "status", "p"."post_title" as "name", "price"."meta_value" as "price", "p"."post_date_gmt" as "createdAt", "p"."post_modified_gmt" as "updatedAt" from "wp_posts" as "p" left join "wp_postmeta" as "price" on ("price"."meta_key" = ? and "price_meta_key" = ?) or ("price_meta"."key" = ?)',
+          bindings: ['_regular_price', '_regular_price', '_regular_price'],
+        },
+        mysql: {
+          sql:
+            'select `p`.`ID` as `id`, `p`.`post_status` as `status`, `p`.`post_title` as `name`, `price`.`meta_value` as `price`, `p`.`post_date_gmt` as `createdAt`, `p`.`post_modified_gmt` as `updatedAt` from `wp_posts` as `p` left join `wp_postmeta` as `price` on (`price`.`meta_key` = ? and `price_meta_key` = ?) or (`price_meta`.`key` = ?)',
+          bindings: ['_regular_price', '_regular_price', '_regular_price'],
+        },
+        mssql: {
+          sql:
+            'select [p].[ID] as [id], [p].[post_status] as [status], [p].[post_title] as [name], [price].[meta_value] as [price], [p].[post_date_gmt] as [createdAt], [p].[post_modified_gmt] as [updatedAt] from [wp_posts] as [p] left join [wp_postmeta] as [price] on ([price].[meta_key] = ? and [price_meta_key] = ?) or ([price_meta].[key] = ?)',
+          bindings: ['_regular_price', '_regular_price', '_regular_price'],
+        },
+        'pg-redshift': {
+          sql:
+            'select "p"."ID" as "id", "p"."post_status" as "status", "p"."post_title" as "name", "price"."meta_value" as "price", "p"."post_date_gmt" as "createdAt", "p"."post_modified_gmt" as "updatedAt" from "wp_posts" as "p" left join "wp_postmeta" as "price" on ("price"."meta_key" = ? and "price_meta_key" = ?) or ("price_meta"."key" = ?)',
+          bindings: ['_regular_price', '_regular_price', '_regular_price'],
+        },
+        oracledb: {
+          sql:
+            'select "p"."ID" "id", "p"."post_status" "status", "p"."post_title" "name", "price"."meta_value" "price", "p"."post_date_gmt" "createdAt", "p"."post_modified_gmt" "updatedAt" from "wp_posts" "p" left join "wp_postmeta" "price" on ("price"."meta_key" = ? and "price_meta_key" = ?) or ("price_meta"."key" = ?)',
+          bindings: ['_regular_price', '_regular_price', '_regular_price'],
+        },
       }
     );
   });

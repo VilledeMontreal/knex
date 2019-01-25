@@ -2,13 +2,13 @@
 
 'use strict';
 
-var sinon = require('sinon');
-var MSSQL_Client = require('../../../lib/dialects/mssql');
-var client = new MSSQL_Client();
+const sinon = require('sinon');
+const MSSQL_Client = require('../../../lib/dialects/mssql');
+const client = new MSSQL_Client({ client: 'mssql' });
 
 describe('MSSQL SchemaBuilder', function() {
-  var tableSql;
-  var equal = require('assert').equal;
+  let tableSql;
+  const equal = require('assert').equal;
 
   it('test basic create table with charset and collate', function() {
     tableSql = client.schemaBuilder().createTable('users', function(table) {
@@ -781,6 +781,22 @@ describe('MSSQL SchemaBuilder', function() {
 
     equal(1, tableSql.length);
     expect(tableSql[0].sql).to.equal('ALTER TABLE [users] ADD [foo] datetime2');
+  });
+
+  it('test adding time stamp with timezone', function() {
+    tableSql = client
+      .schemaBuilder()
+      .table('users', function() {
+        this.timestamp('foo', {
+          useTz: true,
+        });
+      })
+      .toSQL();
+
+    equal(1, tableSql.length);
+    expect(tableSql[0].sql).to.equal(
+      'ALTER TABLE [users] ADD [foo] datetimeoffset'
+    );
   });
 
   it('test adding time stamps', function() {
